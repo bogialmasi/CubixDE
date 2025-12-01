@@ -1,3 +1,4 @@
 .idea
 .venv
 data
+packages_for_lambda
