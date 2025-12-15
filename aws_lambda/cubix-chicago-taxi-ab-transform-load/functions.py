@@ -30,13 +30,16 @@ def transform_weather(data: Dict) -> pd.DataFrame :
 	:return:            transformed weather dataframe
 	"""
 	weather_data = {
-		'datetime' : data['hourly']['time'],
-		'temperature' : data['hourly']['temperature_2m'],
-		'wind_speed' : data['hourly']['wind_speed_10m'],
-		'rain' : data['hourly']['rain'],
-		'precipitation' : data['hourly']['precipitation']}
+		"datetime" : data["hourly"]["time"],
+		"temperature" : data["hourly"]["temperature_2m"],
+		"wind_speed" : data["hourly"]["wind_speed_10m"],
+		"rain" : data["hourly"]["rain"],
+		"precipitation" : data["hourly"]["precipitation"]
+	}
+
 	weather_df = pd.DataFrame(weather_data)
-	weather_df['datetime'] = pd.to_datetime(weather_df['datetime'])
+	weather_df["datetime"] = pd.to_datetime(weather_df["datetime"])
+
 	return weather_df
 
 def transform_taxi(raw_taxi_data: List[Dict]) -> pd.DataFrame :
@@ -72,14 +75,16 @@ def update_dim_tables(taxi_trips: pd.DataFrame, dim_df: pd.DataFrame, value_col:
         :param value_col: name column of the dimension dataframe containing the values
         :return: updated dimension data, new values added if there is any new values in taxi trips data
         """
+	id_col = f"{value_col}_id"
+
 	todays_dim_data = pd.DataFrame(taxi_trips[value_col].unique(), columns = [value_col])
 	new_dim_data = todays_dim_data[~todays_dim_data[value_col].isin(dim_df[value_col])]
 
 	if not new_dim_data.empty :
-		id_col = f"{value_col}_id"
 		max_id = dim_df[id_col].max()
 		new_dim_data[id_col] = range(max_id + 1, max_id + 1 + len(new_dim_data))
 		dim_df = pd.concat([dim_df, new_dim_data], ignore_index = True)
+
 	return dim_df
 
 def update_fact_taxi_trips_with_dim_data(taxi_trips: pd.DataFrame, dim_payment_type: pd.DataFrame, dim_company: pd.DataFrame) -> pd.DataFrame :
@@ -91,9 +96,10 @@ def update_fact_taxi_trips_with_dim_data(taxi_trips: pd.DataFrame, dim_payment_t
 	:dim_company: dimension table for company
 	:return: transformed taxi trips dataframe with payment type and company id
 	"""
-	fact_taxi_trips = taxi_trips.merge(dim_payment_type, on = 'payment_type', how = 'left')
-	fact_taxi_trips = fact_taxi_trips.merge(dim_company, on = 'company', how = 'left')
-	fact_taxi_trips.drop(['payment_type', 'company'], axis = 1, inplace = True)
+	fact_taxi_trips = taxi_trips.merge(dim_payment_type, on = "payment_type")
+	fact_taxi_trips = fact_taxi_trips.merge(dim_company, on = "company")
+	fact_taxi_trips.drop(["payment_type", "company"], axis = 1, inplace = True)
+
 	return fact_taxi_trips
 
 # function for inner use only
@@ -105,7 +111,7 @@ def _upload_df_to_s3(s3, bucket: str, df: pd.DataFrame, path = str) :
 	df.to_csv(buffer, index = False)
 	df_content = buffer.getvalue()
 	s3.put_object(Bucket = bucket, Key = path, Body = df_content)
-	print(f'uploaded transformed data to s3')
+	print("Uploaded dataframe to S3.")
 
 # function for inner use only
 def _move_file_on_s3(s3, bucket: str, source_key: str, target_key: str) :
@@ -114,31 +120,35 @@ def _move_file_on_s3(s3, bucket: str, source_key: str, target_key: str) :
 	"""
 	s3.copy_object(
 			Bucket = bucket,
-			CopySource = {'Bucket' : bucket, 'Key' : source_key},
-			Key = target_key)
+			CopySource = {"Bucket" : bucket, "Key" : source_key},
+			Key = target_key
+	)
 	s3.delete_object(Bucket = bucket, Key = source_key)
-	print(f'archived raw data')
+	print(f"Archived raw data.")
 
-def upload_dim_to_s3(s3, bucket: str, value: str, df: pd.DataFrame) :
+def upload_dim_to_s3(s3, bucket: str, dim_type: str, df: pd.DataFrame) :
 	"""
 	upload a dimension table to specified s3 path
 
 	:param s3:              s3 client
 	:param bucket:          name of the s3 bucket where the file is stored
-	:param value:           name of the dimension table
+	:param dim_type:           name of the dimension table
 	:param df:              dataframe to upload
 	"""
-	if not value in ['company', 'payment_type'] :
-		raise ValueError(f"value mist be 'company' or 'payment_type'")
-	current_file_path = f'transformed_data/dim_{value}/dim_{value}.csv'
-	previous_version_file_path = f'transformed_data/dimension_table_previous_versions/dim_{value}.csv'
+	if not dim_type in ["company", "payment_type"] :
+		raise ValueError("dim_type must be either 'company' or 'payment_type'")
+
+	current_file_path = f"transformed_data/dim_{dim_type}/dim_{dim_type}.csv"
+	previous_version_file_path = f"transformed_data/dimension_table_previous_versions/dim_{dim_type}.csv"
 
 	s3.copy_object(
 			Bucket = bucket,
-			CopySource = {'Bucket' : bucket, 'Key' : current_file_path},
-			Key = previous_version_file_path)
-	print(f'copied existing verion of {value} to previous versions folder')
-	_upload_df_to_s3(s3, bucket, df, current_file_path)
+			CopySource = {"Bucket" : bucket, "Key" : current_file_path},
+			Key = previous_version_file_path
+	)
+	print(f"Copied existing version of {dim_type} to previous version folder")
+
+	_upload_df_to_s3(s3, bucket, df, path = current_file_path)
 
 def upload_and_archive_on_s3(s3, bucket: str, df: pd.DataFrame, file_type: str) :
 	"""
